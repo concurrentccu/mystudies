@@ -780,10 +780,15 @@ end
 local function keyName(key)
 	if key == nil then return "-" end
 	local short = {
-		LeftShift = "LS", RightShift = "RS", LeftControl = "LC", RightControl = "RC", LeftAlt = "LA", RightAlt = "RA",
-		MouseButton1 = "M1", MouseButton2 = "M2", MouseButton3 = "M3", Return = "Ent", Backspace = "Bk",
-		One = "1", Two = "2", Three = "3", Four = "4", Five = "5", Six = "6", Seven = "7", Eight = "8", Nine = "9", Zero = "0",
-	}
+	LeftShift = "LS", RightShift = "RS", LeftControl = "LC", RightControl = "RC", LeftAlt = "LA", RightAlt = "RA",
+	MouseButton1 = "M1", MouseButton2 = "M2", MouseButton3 = "M3", Return = "Ent", Backspace = "Bk",
+	One = "1", Two = "2", Three = "3", Four = "4", Five = "5", Six = "6", Seven = "7", Eight = "8", Nine = "9", Zero = "0",
+	-- controller
+	ButtonA = "A", ButtonB = "B", ButtonX = "X", ButtonY = "Y",
+	ButtonL1 = "L1", ButtonR1 = "R1", ButtonL2 = "L2", ButtonR2 = "R2",
+	ButtonL3 = "L3", ButtonR3 = "R3", ButtonStart = "Start", ButtonSelect = "Sel",
+	DPadUp = "Up", DPadDown = "Down", DPadLeft = "Left", DPadRight = "Right",
+}
 	return short[key.Name] or key.Name
 end
 
@@ -2855,26 +2860,29 @@ end
 			end
 		end
 		local listening = win.Listening
-		if listening then
-			local isKey = input.UserInputType == Enum.UserInputType.Keyboard
-			local isMouse = input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3
-			if isKey or isMouse then
-				win.Listening = nil
-				listening.Listening = false
-				if isKey and input.KeyCode == Enum.KeyCode.Escape then
-					listening.Key = nil
-				else
-					listening.Key = isKey and input.KeyCode or input.UserInputType
-				end
-				listening.Refresh()
-			elseif isClick(input) then
-				win.Listening = nil
-				listening.Listening = false
-				listening.Refresh()
-			end
-			return
+if listening then
+	local isKey = input.UserInputType == Enum.UserInputType.Keyboard
+	local isMouse = input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3
+	local isPad = string.sub(input.UserInputType.Name, 1, 7) == "Gamepad"
+		and (string.sub(input.KeyCode.Name, 1, 6) == "Button" or string.sub(input.KeyCode.Name, 1, 4) == "DPad")
+	if isKey or isMouse or isPad then
+		win.Listening = nil
+		listening.Listening = false
+		if isKey and input.KeyCode == Enum.KeyCode.Escape then
+			listening.Key = nil
+		else
+			listening.Key = (isKey or isPad) and input.KeyCode or input.UserInputType
 		end
-		if processed then return end
+		listening.Refresh()
+	elseif isClick(input) then
+		win.Listening = nil
+		listening.Listening = false
+		listening.Refresh()
+	end
+	return
+end
+		local isPadInput = string.sub(input.UserInputType.Name, 1, 7) == "Gamepad"
+		if processed and not isPadInput then return end
 		if input.KeyCode == win.MenuKey then win:Toggle() end
 		for _, object in win.Binds do
 			if object.Key and (object.Key == input.KeyCode or object.Key == input.UserInputType) and object.OnPress then
