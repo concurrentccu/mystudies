@@ -2733,12 +2733,13 @@ function Window:BuildSettings(tab)
 	menu:Dropdown({ Name = "Font", Options = FontOrder, Default = "Inter", NoSave = true, Callback = function(value) self:SetFont(value) end })
 	menu:Dropdown({ Name = "Text Weight", Options = WeightOrder, Default = BodyWeight.Name, NoSave = true, Callback = function(value) self:SetTextWeight(value) end })
 
-	if saved then
-	task.defer(function()
-		if self:LoadConfig(saved) and not self.Streamer then
-			self:Notify(('Autoloaded "%s".'):format(saved))
-		end
-	end)
+		if saved then
+		task.defer(function()
+			if self:LoadConfig(saved) and not self.Streamer then
+				self:Notify(('Autoloaded "%s".'):format(saved))
+			end
+		end)
+	end
 end
 
 function Window:_buildWatermark(options)
@@ -2864,13 +2865,16 @@ function Window:HomeTab(options)
 	local bold = Enum.FontWeight.Bold
 
 	-- profile
+		-- profile
+	local profile = panel(0, 70)
+	new("Frame", { Bg = "Accent", Position = Offset(0, 14), Size = Offset(2, 40), Radius = 1 }, profile)
 	local avatar = picture(profile, "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150", 12, 10, 48, FULL)
-self:MaskImage(avatar, "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150")
-line(profile, "Welcome back", 72, 9, 11, "InactiveText")
-local nameLine = line(profile, "", 72, 25, 16, "Text", 10, bold)
-self:Mask(nameLine, player.DisplayName, "Hidden")
-local idLine = line(profile, "", 72, 46, 11, "InactiveText")
-self:Mask(idLine, "@" .. player.Name .. "  \u{00B7}  ID " .. player.UserId, "@hidden  \u{00B7}  ID hidden")
+	self:MaskImage(avatar, "rbxthumb://type=AvatarHeadShot&id=" .. player.UserId .. "&w=150&h=150")
+	line(profile, "Welcome back", 72, 9, 11, "InactiveText")
+	local nameLine = line(profile, "", 72, 25, 16, "Text", 10, bold)
+	self:Mask(nameLine, player.DisplayName, "Hidden")
+	local idLine = line(profile, "", 72, 46, 11, "InactiveText")
+	self:Mask(idLine, "@" .. player.Name .. "  \u{00B7}  ID " .. player.UserId, "@hidden  \u{00B7}  ID hidden")
 
 	-- stat cards
 	local row = new("Frame", { Position = Offset(pad - 3, 76), Size = Dim2(1, -pad * 2 + 6, 0, 52) }, tab.Page)
@@ -2970,16 +2974,15 @@ self:Mask(idLine, "@" .. player.Name .. "  \u{00B7}  ID " .. player.UserId, "@hi
 
 		for i, other in everyone do
 			local entry = new("Frame", { Position = Offset(0, (i - 1) * 30), Size = Dim2(1, -6, 0, 30) }, list)
-			local hide = self.Streamer
+local hide = self.Streamer
 local thumb = "rbxthumb://type=AvatarHeadShot&id=" .. other.UserId .. "&w=48&h=48"
 picture(entry, hide and "" or thumb, 7, 4, 22, FULL)
 line(entry, hide and "Hidden" or other.DisplayName, 38, 7, 12, other == player and "Accent" or "Text", 130)
 local handle = line(entry, hide and "@hidden" or ("@" .. other.Name), 38, 7, 11, "InactiveText", 6)
-			local handle = line(entry, "@" .. other.Name, 38, 7, 11, "InactiveText", 6)
-			handle.Position = Dim2(1, -126, 0, handle.Position.Y.Offset)
-			handle.Size = Offset(120, 15)
-			handle.TextXAlignment = Enum.TextXAlignment.Right
-			table.insert(rows, entry)
+handle.Position = Dim2(1, -126, 0, handle.Position.Y.Offset)
+handle.Size = Offset(120, 15)
+handle.TextXAlignment = Enum.TextXAlignment.Right
+table.insert(rows, entry)
 		end
 
 		list.CanvasSize = Offset(0, #everyone * 30)
@@ -3206,7 +3209,7 @@ local handle = line(entry, hide and "@hidden" or ("@" .. other.Name), 38, 7, 11,
 	return tab
 end
 
-local Blossom = { Themes = Themes, ThemeOrder = ThemeOrder, Metrics = Metrics, Fonts = Fonts, Streamer = false, Masks = {}, StreamerHooks = {} }
+local Blossom = { Themes = Themes, ThemeOrder = ThemeOrder, Metrics = Metrics, Fonts = Fonts }
 
 local LastWindow
 
@@ -3230,7 +3233,7 @@ function Blossom.new(options)
 		ThemeRows = {}, HotkeyEntries = {}, HotkeyOrder = {}, NotifyStack = {}, Connections = {}, Jobs = {}, Moved = {}, PendingThemeKeys = {}, FlagOwners = {},
 		ThemeClock = 0, SidebarY = Metrics.FirstCategory, SidebarHasTabs = false, SidebarAfterCategory = false,
 		Visible = true, ThemeName = options.Theme or "Blossom", MenuKey = options.MenuKey or Enum.KeyCode.RightShift,
-		LastPopupTime = 0, DropdownClosedAt = 0,
+		LastPopupTime = 0, DropdownClosedAt = 0, Streamer = false, Masks = {}, StreamerHooks = {},
 	}, Window)
 	ensureLoop()
 	LastWindow, Focus = win, win
