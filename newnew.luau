@@ -2800,10 +2800,14 @@ function Window:Destroy()
 	self.Screen:Destroy()
 end
 
+-- Replace the whole existing `function Window:HomeTab(options) ... end` with this.
+-- Nothing else in the library needs to change.
+
 function Window:HomeTab(options)
 	options = options or {}
 	local Stats = game:GetService("Stats")
 	local Marketplace = game:GetService("MarketplaceService")
+	local TeleportService = game:GetService("TeleportService")
 	local player = Players.LocalPlayer
 	local pad = Metrics.Pad
 	local tab = self:Tab({ Name = options.Name or "Home", Icon = options.Icon or "user" })
@@ -2880,21 +2884,47 @@ function Window:HomeTab(options)
 		setText(creator, ok and ("by " .. info.Creator.Name) or "Unknown creator")
 	end)
 
-	-- player list (fills the rest of the page)
+	---------------------------------------------------------------------------
+	-- bottom panel (fills the rest of the page): Players | Servers
+	---------------------------------------------------------------------------
 	local listPanel = new("Frame", {
 		Bg = "Inline", Position = Offset(pad + 1, 225), Size = Dim2(1, -pad * 2 - 2, 1, -226),
 		Radius = Metrics.FloatRadius, Border = "Outline",
 	}, tab.Page)
-	line(listPanel, "Players", 10, 8, 12, "Text", 100, bold)
+	-- The whole panel counts as a control, so dragging inside either list never moves the window.
+	self.HomeList = listPanel
+
+	local view, loaded, fetching = "Players", false, false
+	local playerCountStr, serverCountStr = "", ""
+	local setView, loadServers
+
 	local countText = line(listPanel, "", 10, 8, 12, "Accent", 10, bold)
 	countText.TextXAlignment = Enum.TextXAlignment.Right
-	new("Frame", { Bg = "Outline", Position = Offset(10, 31), Size = Dim2(1, -20, 0, 1) }, listPanel)
+	local function paintCount()
+		local players = view == "Players"
+		countText.Size = Dim2(1, players and -20 or -80, 0, countText.Size.Y.Offset)
+		setText(countText, players and playerCountStr or serverCountStr)
+	end
 
+	new("Frame", { Bg = "Outline", Position = Offset(10, 31), Size = Dim2(1, -20, 0, 1) }, listPanel)
+	local underline = new("Frame", { Bg = "Accent", Position = Offset(8, 30), Size = Offset(56, 2), Radius = 1 }, listPanel)
+
+	local function tabButton(x, name)
+		local button = new("TextButton", { Position = Offset(x, 2), Size = Offset(56, 28) }, listPanel)
+		local text = centeredLabel(button, 56, {
+			Text = name, TextSize = 12, RowH = 28, Weight = bold,
+			Fg = function() return view == name and Current.Text or Current.InactiveText end,
+		})
+		button.MouseButton1Click:Connect(function() setView(name) end)
+		return text
+	end
+	local playersText, serversText = tabButton(8, "Players"), tabButton(68, "Servers")
+
+	-- players view
 	local list = new("ScrollingFrame", {
 		Position = Offset(4, 36), Size = Dim2(1, -8, 1, -40), CanvasSize = Offset(0, 0), ScrollBarThickness = 2,
 	}, listPanel)
 	bind(list, "ScrollBarImageColor3", "Accent")
-	self.HomeList = list
 
 	local rows = {}
 	local function refreshPlayers(leaving)
@@ -2921,12 +2951,207 @@ function Window:HomeTab(options)
 		end
 
 		list.CanvasSize = Offset(0, #everyone * 30)
-		setText(countText, #everyone .. " / " .. Players.MaxPlayers)
+		playerCountStr = #everyone .. " / " .. Players.MaxPlayers
+		paintCount()
 	end
 
 	table.insert(self.Connections, Players.PlayerAdded:Connect(function() refreshPlayers() end))
 	table.insert(self.Connections, Players.PlayerRemoving:Connect(refreshPlayers))
 	refreshPlayers()
+
+	-- servers view
+	local serverArea = new("Frame", { Position = Offset(0, 33), Size = Dim2(1, 0, 1, -33), Visible = false }, listPanel)
+
+	local refreshButton = new("TextButton", {
+		AnchorPoint = Vec2(1, 0), Position = Dim2(1, -8, 0, 4), Size = Offset(54, 22),
+		Radius = Metrics.Radius, Border = "Outline", BackgroundTransparency = 0, Visible = false,
+	}, listPanel)
+	interactive(refreshButton, "Element", "HoveredElement", "Tab")
+	centeredLabel(refreshButton, 54, { Text = "Refresh", TextSize = 11, RowH = 22 })
+
+	-- recommended server card
+	local recCard = new("Frame", {
+		Bg = "Element", Position = Offset(9, 7), Size = Dim2(1, -18, 0, 52),
+		Radius = Metrics.Radius, Border = "Outline", Visible = false,
+	}, serverArea)
+	addGradient(recCard)
+	new("Frame", { Bg = "Accent", Position = Offset(0, 10), Size = Offset(2, 30), Radius = 1 }, recCard)
+	line(recCard, "RECOMMENDED  \u{00B7}  closest to you", 12, 5, 9, "Accent", 70, bold)
+	local recName = line(recCard, "", 12, 18, 12, "Text", 70, bold)
+	local recInfo = line(recCard, "", 12, 34, 11, "InactiveText", 70)
+	local recJoin = new("TextButton", {
+		AnchorPoint = Vec2(1, 0), Position = Dim2(1, -10, 0, 13), Size = Offset(54, 26),
+		Radius = Metrics.Radius, Border = "Outline", BackgroundTransparency = 0,
+	}, recCard)
+	interactive(recJoin, "Element", "HoveredElement", "Tab")
+	centeredLabel(recJoin, 54, { Text = "Join", TextSize = 12, RowH = 26 })
+
+	local serverList = new("ScrollingFrame", {
+		Position = Offset(4, 66), Size = Dim2(1, -8, 1, -70), CanvasSize = Offset(0, 0), ScrollBarThickness = 2,
+	}, serverArea)
+	bind(serverList, "ScrollBarImageColor3", "Accent")
+	local status = line(serverArea, "", 10, 70, 12, "InactiveText", 10)
+
+	local serverRows, recommended = {}, nil
+
+	local function pingColor(ping)
+		if not ping then return Current.InactiveText end
+		if ping <= 90 then return RGB(112, 205, 132) end
+		if ping <= 180 then return RGB(235, 190, 90) end
+		return RGB(232, 100, 100)
+	end
+
+	local function pingString(ping)
+		return ping and (round(ping) .. " ms") or "-- ms"
+	end
+
+	local function join(server)
+		if not server then return end
+		self:Notify("Joining server...")
+		local ok = pcall(TeleportService.TeleportToPlaceInstance, TeleportService, game.PlaceId, server.id, player)
+		if not ok then self:Notify("Couldn't join that server.") end
+	end
+	recJoin.MouseButton1Click:Connect(function() join(recommended) end)
+
+	local function clearRows()
+		for _, old in serverRows do old:Destroy() end
+		table.clear(serverRows)
+		serverList.CanvasSize = Offset(0, 0)
+		serverList.CanvasPosition = Vec2(0, 0)
+	end
+
+	local function addServerRow(index, server)
+		local entry = new("TextButton", {
+			Bg = "Inline", Radius = Metrics.Radius, Position = Offset(0, (index - 1) * 30), Size = Dim2(1, -6, 0, 28),
+		}, serverList)
+		interactive(entry, "Inline", "Outline")
+		line(entry, "#" .. index .. "  " .. string.sub(server.id, 1, 8), 10, 6, 12, "Text", 150)
+		local players = line(entry, server.playing .. " / " .. server.maxPlayers, 0, 6, 12, "InactiveText", 0)
+		players.Position = Dim2(1, -144, 0, players.Position.Y.Offset)
+		players.Size = Offset(64, 16)
+		players.TextXAlignment = Enum.TextXAlignment.Right
+		local ping = line(entry, pingString(server.ping), 0, 6, 12, function() return pingColor(server.ping) end, 0)
+		ping.Position = Dim2(1, -70, 0, ping.Position.Y.Offset)
+		ping.Size = Offset(60, 16)
+		ping.TextXAlignment = Enum.TextXAlignment.Right
+		entry.MouseButton1Click:Connect(function() join(server) end)
+		table.insert(serverRows, entry)
+	end
+
+	local function httpGet(url)
+		local requester = (typeof(request) == "function" and request)
+			or (typeof(http_request) == "function" and http_request)
+			or (typeof(syn) == "table" and syn.request)
+			or nil
+		if requester then
+			local ok, response = pcall(requester, { Url = url, Method = "GET" })
+			if ok and type(response) == "table" then return response.Body, response.StatusCode end
+		end
+		local ok, body = pcall(game.HttpGet, game, url)
+		if ok then return body, 200 end
+		return nil, nil
+	end
+
+	local function showServers(found)
+		local eligible = {}
+		for _, server in found do
+			if server.id ~= game.JobId and (server.playing or 0) < (server.maxPlayers or 0) then
+				table.insert(eligible, server)
+			end
+		end
+		-- Lowest ping first; servers with no ping data sink to the bottom.
+		table.sort(eligible, function(a, b) return (a.ping or math.huge) < (b.ping or math.huge) end)
+
+		clearRows()
+		recommended = nil
+		recCard.Visible = false
+
+		-- Ping is measured from your connection, so the lowest one is the nearest region.
+		-- Nearly empty or nearly full servers take a penalty so the pick is actually worth joining.
+		local bestScore
+		for _, server in eligible do
+			local score = server.ping or 500
+			if server.playing < 2 then score += 40 end
+			if server.maxPlayers - server.playing < 2 then score += 40 end
+			if not bestScore or score < bestScore then recommended, bestScore = server, score end
+		end
+
+		for index, server in eligible do addServerRow(index, server) end
+		serverList.CanvasSize = Offset(0, #eligible * 30)
+
+		if recommended then
+			setText(recName, "Server " .. string.sub(recommended.id, 1, 8))
+			setText(recInfo, ("%d / %d players  \u{00B7}  %s"):format(recommended.playing, recommended.maxPlayers, pingString(recommended.ping)))
+			recCard.Visible = true
+			status.Visible = false
+		else
+			setText(status, "No joinable servers found.")
+			status.Visible = true
+		end
+		serverCountStr = #eligible .. (#eligible == 1 and " server" or " servers")
+		paintCount()
+	end
+
+	loadServers = function()
+		if fetching then return end
+		fetching = true
+		clearRows()
+		recommended = nil
+		recCard.Visible = false
+		serverCountStr = ""
+		paintCount()
+		setText(status, "Loading servers...")
+		status.Visible = true
+
+		task.spawn(function()
+			local found, cursor, failure = {}, nil, nil
+			for page = 1, 3 do
+				local url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(game.PlaceId)
+				if cursor then url ..= "&cursor=" .. HttpService:UrlEncode(cursor) end
+				local body, code = httpGet(url)
+				if not body then
+					failure = "Couldn't reach Roblox."
+					break
+				end
+				local ok, data = pcall(HttpService.JSONDecode, HttpService, body)
+				if not ok or type(data) ~= "table" or type(data.data) ~= "table" then
+					failure = code == 429 and "Rate limited, try again shortly." or "Couldn't read the server list."
+					break
+				end
+				for _, server in data.data do table.insert(found, server) end
+				cursor = data.nextPageCursor
+				if not cursor then break end
+				task.wait(0.35)
+			end
+			fetching = false
+			if not serverArea.Parent then return end
+			-- Keep whatever loaded if a later page failed.
+			if failure and #found == 0 then
+				setText(status, failure)
+				status.Visible = true
+				return
+			end
+			showServers(found)
+		end)
+	end
+	refreshButton.MouseButton1Click:Connect(loadServers)
+
+	setView = function(name)
+		if view == name then return end
+		view = name
+		list.Visible = name == "Players"
+		serverArea.Visible = name == "Servers"
+		refreshButton.Visible = name == "Servers"
+		refresh(playersText)
+		refresh(serversText)
+		animate(underline, "Position", Offset(name == "Players" and 8 or 68, 30), "Soft")
+		paintCount()
+		-- The list is only fetched the first time the Servers view opens; Refresh reloads it.
+		if name == "Servers" and not loaded then
+			loaded = true
+			loadServers()
+		end
+	end
 
 	-- live stats
 	local started, frames, elapsed = os.clock(), 0, 0
